@@ -6,7 +6,7 @@
 
 ```bash
 # 1. Клонуй репозиторій
-git clone https://github.com/your_username/youtube-view-checker.git
+git clone https://github.com/iamvova/yt-checker.git
 cd youtube-view-checker
 
 # 2. Встанови залежності
