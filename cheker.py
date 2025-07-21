@@ -3,27 +3,84 @@ from tkinter import ttk, filedialog, messagebox
 from googleapiclient.discovery import build
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
+import dateutil.parser
+import os
+import sys
 
 class YouTubeChecker:
     def __init__(self, root):
         self.root = root
-        self.root.title("YouTube Stats Checker")
-        self.root.geometry("1200x700")
+        self.root.title("YouTube Stats Checker v1.0")
+        self.root.geometry("1400x700")
         
-        # YouTube API ключ (замініть на ваш)
-        self.API_KEY = "YOUR_YOUTUBE_API_KEY_HERE"
+        # Отримання шляху до папки з програмою
+        if getattr(sys, 'frozen', False):
+            # Якщо це exe файл
+            self.app_dir = os.path.dirname(sys.executable)
+        else:
+            # Якщо це звичайний Python скрипт
+            self.app_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        self.api_key_file = os.path.join(self.app_dir, "api_key.txt")
         self.youtube = None
         
         self.init_ui()
+        self.load_api_key()
         self.init_api()
+    
+    def load_api_key(self):
+        """Завантажує API ключ з файлу"""
+        try:
+            if os.path.exists(self.api_key_file):
+                with open(self.api_key_file, 'r', encoding='utf-8') as f:
+                    self.API_KEY = f.read().strip()
+                if not self.API_KEY:
+                    self.create_api_key_file()
+            else:
+                self.create_api_key_file()
+        except Exception as e:
+            messagebox.showerror("Помилка", f"Не вдалося прочитати файл API ключа: {str(e)}")
+            self.create_api_key_file()
+    
+    def create_api_key_file(self):
+        """Створює файл для API ключа"""
+        try:
+            with open(self.api_key_file, 'w', encoding='utf-8') as f:
+                f.write("YOUR_YOUTUBE_API_KEY_HERE\n")
+                f.write("# Замініть рядок вище на ваш YouTube API ключ\n")
+                f.write("# Отримати ключ можна тут: https://console.developers.google.com/\n")
+                f.write("# 1. Створіть новий проект або виберіть існуючий\n")
+                f.write("# 2. Увімкніть YouTube Data API v3\n")
+                f.write("# 3. Створіть API ключ у розділі 'Credentials'\n")
+                f.write("# 4. Замініть перший рядок цього файлу на ваш ключ\n")
+            
+            messagebox.showinfo(
+                "Налаштування API ключа", 
+                f"Створено файл api_key.txt у папці програми.\n\n"
+                f"Будь ласка:\n"
+                f"1. Відкрийте файл {self.api_key_file}\n"
+                f"2. Замініть 'YOUR_YOUTUBE_API_KEY_HERE' на ваш YouTube API ключ\n"
+                f"3. Перезапустіть програму\n\n"
+                f"Інструкції по отриманню ключа знаходяться у файлі."
+            )
+            self.API_KEY = "YOUR_YOUTUBE_API_KEY_HERE"
+        except Exception as e:
+            messagebox.showerror("Помилка", f"Не вдалося створити файл API ключа: {str(e)}")
+            self.API_KEY = "YOUR_YOUTUBE_API_KEY_HERE"
     
     def init_api(self):
         """Ініціалізація YouTube API"""
+        if self.API_KEY == "YOUR_YOUTUBE_API_KEY_HERE" or not self.API_KEY:
+            self.status_var.set("Потрібно налаштувати API ключ")
+            return
+            
         try:
             self.youtube = build('youtube', 'v3', developerKey=self.API_KEY)
+            self.status_var.set("API підключено успішно")
         except Exception as e:
             messagebox.showerror("Помилка API", f"Не вдалося ініціалізувати YouTube API: {str(e)}")
+            self.status_var.set("Помилка підключення API")
     
     def init_ui(self):
         """Ініціалізація інтерфейсу"""
@@ -35,7 +92,10 @@ class YouTubeChecker:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(2, weight=1)
+        main_frame.rowconfigure(3, weight=1)  # Змінено з 2 на 3
+        
+        # Панель API статусу
+        self.create_api_status_panel(main_frame)
         
         # Панель вибору файлу
         self.create_file_panel(main_frame)
@@ -49,10 +109,32 @@ class YouTubeChecker:
         # Панель статусу та підсумків
         self.create_status_panel(main_frame)
     
+    def create_api_status_panel(self, parent):
+        """Створює панель статусу API"""
+        api_frame = ttk.LabelFrame(parent, text="Статус API", padding="5")
+        api_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        api_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(api_frame, text="API статус:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        
+        self.api_status_var = tk.StringVar(value="Завантаження...")
+        ttk.Label(api_frame, textvariable=self.api_status_var).grid(row=0, column=1, sticky=tk.W)
+        
+        ttk.Button(api_frame, text="Оновити API ключ", command=self.reload_api_key).grid(row=0, column=2, padx=(10, 0))
+    
+    def reload_api_key(self):
+        """Перезавантажує API ключ"""
+        self.load_api_key()
+        self.init_api()
+        if self.youtube:
+            self.api_status_var.set("API підключено успішно")
+        else:
+            self.api_status_var.set("Потрібно налаштувати API ключ")
+    
     def create_file_panel(self, parent):
         """Створює панель для вибору файлу"""
         top_frame = ttk.Frame(parent)
-        top_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        top_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         top_frame.columnconfigure(1, weight=1)
         
         ttk.Label(top_frame, text="Файл з посиланнями:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
@@ -66,7 +148,7 @@ class YouTubeChecker:
     def create_control_panel(self, parent):
         """Створює панель керування"""
         button_frame = ttk.Frame(parent)
-        button_frame.grid(row=1, column=0, pady=10)
+        button_frame.grid(row=2, column=0, pady=10)
         
         self.check_button = ttk.Button(button_frame, text="Перевірити відео", command=self.start_checking)
         self.check_button.pack()
@@ -74,26 +156,27 @@ class YouTubeChecker:
     def create_results_table(self, parent):
         """Створює таблицю результатів"""
         table_frame = ttk.Frame(parent)
-        table_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        table_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
         
-        # Створення таблиці
-        columns = ('№', 'Назва', 'Тип', 'Перегляди', 'Лайки', 'Статус')
+        # Створення таблиці з новою колонкою
+        columns = ('№', 'Назва', 'Тип', 'Перегляди', 'Лайки', 'Опубліковано', 'Статус')
         self.tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=20)
         
         # Налаштування заголовків та ширини стовпчиків
         column_config = {
             '№': (50, 40),
-            'Назва': (400, 200),
+            'Назва': (350, 200),
             'Тип': (120, 100),
             'Перегляди': (120, 100),
             'Лайки': (100, 80),
+            'Опубліковано': (150, 120),
             'Статус': (100, 80)
         }
         
         for col, (width, minwidth) in column_config.items():
-            self.tree.heading(col, text=col if col == '№' else f'{col}' + (' відео' if col == 'Назва' else ''))
+            self.tree.heading(col, text=col if col == '№' else f'{col}')
             self.tree.column(col, width=width, minwidth=minwidth)
         
         # Прокручування
@@ -108,7 +191,7 @@ class YouTubeChecker:
     def create_status_panel(self, parent):
         """Створює панель статусу та підсумків"""
         bottom_frame = ttk.Frame(parent)
-        bottom_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        bottom_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         bottom_frame.columnconfigure(0, weight=1)
         
         # Прогрес бар
@@ -116,7 +199,7 @@ class YouTubeChecker:
         self.progress.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
         
         # Статус
-        self.status_var = tk.StringVar(value="Готовий до роботи")
+        self.status_var = tk.StringVar(value="Завантаження...")
         ttk.Label(bottom_frame, textvariable=self.status_var).grid(row=1, column=0, pady=(0, 10))
         
         # Підсумки
@@ -179,7 +262,8 @@ class YouTubeChecker:
         """Вибір файлу з посиланнями"""
         file_path = filedialog.askopenfilename(
             title="Оберіть txt файл з YouTube посиланнями",
-            filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialdir=self.app_dir
         )
         if file_path:
             self.file_path_var.set(file_path)
@@ -210,6 +294,45 @@ class YouTubeChecker:
             return f"{number/1000:.1f}K"
         else:
             return str(number)
+    
+    def format_time_ago(self, published_at):
+        """Форматує час публікації у форматі 'X часу тому'"""
+        try:
+            # Парсинг дати публікації
+            published_date = dateutil.parser.parse(published_at)
+            
+            # Переконуємось що дата має часову зону
+            if published_date.tzinfo is None:
+                published_date = published_date.replace(tzinfo=timezone.utc)
+            
+            # Поточний час
+            now = datetime.now(timezone.utc)
+            
+            # Різниця у часі
+            time_diff = now - published_date
+            
+            total_seconds = int(time_diff.total_seconds())
+            
+            if total_seconds < 60:
+                return f"{total_seconds} сек тому"
+            elif total_seconds < 3600:  # менше години
+                minutes = total_seconds // 60
+                return f"{minutes} хв тому"
+            elif total_seconds < 86400:  # менше дня
+                hours = total_seconds // 3600
+                return f"{hours} год тому"
+            elif total_seconds < 2592000:  # менше місяця (30 днів)
+                days = total_seconds // 86400
+                return f"{days} д тому"
+            elif total_seconds < 31536000:  # менше року
+                months = total_seconds // 2592000
+                return f"{months} міс тому"
+            else:
+                years = total_seconds // 31536000
+                return f"{years} р тому"
+                
+        except Exception as e:
+            return "Невідомо"
     
     def get_video_stats_api(self, video_id):
         """Отримує статистику відео через YouTube API"""
@@ -251,11 +374,16 @@ class YouTubeChecker:
                         total_seconds += int(value)
                 is_shorts = total_seconds <= 60
             
+            # Форматування часу публікації
+            published_at = snippet.get('publishedAt', '')
+            time_ago = self.format_time_ago(published_at)
+            
             return {
                 'title': snippet.get('title', 'Невідома назва'),
                 'views': int(stats.get('viewCount', 0)),
                 'likes': int(stats.get('likeCount', 0)),
-                'type': 'YouTube Shorts' if is_shorts else 'Звичайне відео'
+                'type': 'YouTube Shorts' if is_shorts else 'Звичайне відео',
+                'published_ago': time_ago
             }, None
             
         except Exception as e:
@@ -264,7 +392,7 @@ class YouTubeChecker:
     def check_videos(self):
         """Перевіряє всі відео з файлу"""
         if not self.youtube:
-            messagebox.showerror("Помилка", "YouTube API не ініціалізовано")
+            messagebox.showerror("Помилка", "YouTube API не ініціалізовано. Перевірте налаштування API ключа.")
             return
             
         file_path = self.file_path_var.get()
@@ -298,7 +426,7 @@ class YouTubeChecker:
             
             video_id = self.extract_video_id(url)
             if not video_id:
-                self.add_table_row(i, 'Невірне посилання', '-', '-', '-', 'Помилка')
+                self.add_table_row(i, 'Невірне посилання', '-', '-', '-', '-', 'Помилка')
                 failed += 1
                 continue
             
@@ -307,10 +435,11 @@ class YouTubeChecker:
             if stats:
                 self.add_table_row(
                     i, 
-                    stats['title'][:60] + ('...' if len(stats['title']) > 60 else ''),
+                    stats['title'][:50] + ('...' if len(stats['title']) > 50 else ''),
                     stats['type'],
                     self.format_number(stats['views']),
                     self.format_number(stats['likes']),
+                    stats['published_ago'],
                     'Успішно'
                 )
                 successful += 1
@@ -322,7 +451,7 @@ class YouTubeChecker:
                 if stats['views'] < 3:
                     low_views_count += 1
             else:
-                self.add_table_row(i, 'Помилка завантаження', '-', '-', '-', error[:20] + ('...' if len(error) > 20 else ''))
+                self.add_table_row(i, 'Помилка завантаження', '-', '-', '-', '-', error[:20] + ('...' if len(error) > 20 else ''))
                 failed += 1
             
             # Оновлення статистики
@@ -369,7 +498,7 @@ class YouTubeChecker:
         """Завершення перевірки"""
         self.stats_vars['execution_time'].set(f"{duration:.1f} сек")
         self.progress.stop()
-        self.check_button.config(state="normal")
+        self.check_button.config(state="disabled" if not self.youtube else "normal")
         self.status_var.set("Перевірка завершена")
         
         messagebox.showinfo("Готово", f"Перевірка завершена!\nУспішно: {successful}, Помилок: {failed}")
